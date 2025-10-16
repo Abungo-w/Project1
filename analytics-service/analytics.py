@@ -3,21 +3,20 @@ import pymysql
 import pymongo
 import os
 import time
+from flask_apscheduler import APScheduler
 
 app = Flask(__name__)
 
-
+# MySQL configuration
 MYSQL_HOST = os.getenv("MYSQL_HOST", "mysql_db")
 MYSQL_USER = os.getenv("MYSQL_USER", "user")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "data_collection")
 
-
+# MongoDB configuration
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo_db:27017/analytics")
 mongo_client = pymongo.MongoClient(MONGO_URI)
 mongo_db = mongo_client["analytics"]
-
-
 
 def get_mysql_connection(retries=5, delay=5):
     for i in range(retries):
@@ -41,8 +40,6 @@ def get_mysql_connection(retries=5, delay=5):
                 print("Failed to connect to MySQL after multiple attempts.")
                 raise
 
-
-
 def update_analytics():
     mysql_conn = get_mysql_connection()
     cursor = mysql_conn.cursor()
@@ -54,7 +51,6 @@ def update_analytics():
         max_val, min_val, avg_val = result
         stats_collection = mongo_db.get_collection('stats')
 
-        
         avg_val = float(avg_val)
 
         stats_collection.insert_one({
@@ -70,14 +66,10 @@ def update_analytics():
     cursor.close()
     mysql_conn.close()
 
-
-
 @app.route("/update-analytics", methods=["POST"])
 def trigger_update():
     update_analytics()
     return jsonify({"message": "Analytics updated successfully"}), 200
-
-
 
 @app.route("/analytics", methods=["GET"])
 def get_analytics():
@@ -86,10 +78,15 @@ def get_analytics():
         return jsonify(stats)
     return jsonify({"error": "No analytics found"}), 404
 
+# Scheduler setup
+scheduler = APScheduler()
 
+@scheduler.task('interval', id='update_task', seconds=60)
+def scheduled_update():
+    update_analytics()
 
 if __name__ == "__main__":
-    update_analytics() 
-    app.run(
-        host="0.0.0.0", port=6000, debug=True
-    )  
+    scheduler.init_app(app)
+    scheduler.start()
+    app.run(host="0.0.0.0", port=6000, debug=True)
+
