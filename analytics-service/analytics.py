@@ -73,7 +73,7 @@ def trigger_update():
 
 @app.route("/analytics", methods=["GET"])
 def get_analytics():
-    stats = mongo_db.stats.find_one({}, {"_id": 0})  
+    stats = mongo_db.stats.find_one({}, {"_id": 0}, sort=[('_id', -1)])
     if stats:
         return jsonify(stats)
     return jsonify({"error": "No analytics found"}), 404
