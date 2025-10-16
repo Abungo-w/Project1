@@ -1,17 +1,17 @@
 const express = require('express');
-const cors = require('cors');  // <-- import cors
+const cors = require('cors'); 
 
 const app = express();
 
-// Enable CORS
+
 app.use(cors());
 
-// Enable JSON body parsing
+
 app.use(express.json());
 
 const users = {
-    "admin": "password123",
-    "user": "mypassword"
+    "admin": "admin",
+    "user": "user"
 };
 
 app.post('/login', (req, res) => {
