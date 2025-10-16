@@ -11,14 +11,27 @@ app.use(cors());
 const db = mysql.createConnection({
     host: 'mysql-db',
     user: 'user',
-    password: 'userpassword',
+    password: 'password',
     database: 'projectdb'
 });
 
-db.connect(err => {
-    if(err) throw err;
-    console.log("Connected to MySQL");
-});
+function connectWithRetry(retries = 5, delay = 2000) {
+    db.connect(err => {
+        if(err) {
+            if(retries > 0) {
+                console.log(`MySQL connection failed. Retrying in ${delay/1000}s... (${retries} retries left)`);
+                setTimeout(() => connectWithRetry(retries - 1, delay), delay);
+            } else {
+                console.error("Failed to connect to MySQL after multiple attempts");
+                throw err;
+            }
+        } else {
+            console.log("Connected to MySQL");
+        }
+    });
+}
+
+connectWithRetry();
 
 app.post('/enter', async (req, res) => {
     const { username, password, value } = req.body;

@@ -12,6 +12,11 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   mongo-db:
     image: mongo:6
@@ -20,6 +25,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   auth-service:
     build: ./auth-service
@@ -27,8 +37,10 @@ services:
     ports:
       - "4000:4000"
     depends_on:
-      - mysql-db
-      - mongo-db
+      mysql-db:
+        condition: service_healthy
+      mongo-db:
+        condition: service_healthy
 
   enter-data:
     build: ./enter-data
@@ -36,15 +48,19 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - auth-service
-      - mysql-db
+      auth-service:
+        condition: service_started
+      mysql-db:
+        condition: service_healthy
 
   analytics-service:
     build: ./analytics-service
     container_name: analytics-service
     depends_on:
-      - mysql-db
-      - mongo-db
+      mysql-db:
+        condition: service_healthy
+      mongo-db:
+        condition: service_healthy
 
   show-results:
     build: ./show-results
@@ -52,8 +68,10 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - auth-service
-      - mongo-db
+      auth-service:
+        condition: service_started
+      mongo-db:
+        condition: service_healthy
 
 volumes:
   mysql_data:
