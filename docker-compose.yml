@@ -1,77 +1,100 @@
 services:
-
-  mysql-db:
-    image: mysql:8
-    container_name: mysql-db
+  mysql:
+    image: mysql:latest
+    container_name: mysql_db
+    restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: projectdb
+      MYSQL_DATABASE: data_collection
       MYSQL_USER: user
       MYSQL_PASSWORD: password
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./db_mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 5s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "user", "-ppassword"]
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 5
 
-  mongo-db:
-    image: mongo:6
-    container_name: mongo-db
+  mongodb:
+    image: mongo:latest
+    container_name: mongo_db
+    restart: always
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
 
-  auth-service:
+  auth_service:
     build: ./auth-service
     container_name: auth-service
-    ports:
-      - "4000:4000"
-    depends_on:
-      mysql-db:
-        condition: service_healthy
-      mongo-db:
-        condition: service_healthy
-
-  enter-data:
-    build: ./enter-data
-    container_name: enter-data
-    ports:
-      - "3000:3000"
-    depends_on:
-      auth-service:
-        condition: service_started
-      mysql-db:
-        condition: service_healthy
-
-  analytics-service:
-    build: ./analytics-service
-    container_name: analytics-service
-    depends_on:
-      mysql-db:
-        condition: service_healthy
-      mongo-db:
-        condition: service_healthy
-
-  show-results:
-    build: ./show-results
-    container_name: show-results
+    restart: always
+    environment:
+      DB_HOST: mysql_db
+      DB_USER: user
+      DB_PASSWORD: password
+      DB_NAME: data_collection
     ports:
       - "5000:5000"
     depends_on:
-      auth-service:
-        condition: service_started
-      mongo-db:
+      mysql:
         condition: service_healthy
+
+  enter_data:
+    build: ./enter-data
+    container_name: enter-data
+    restart: always
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:5000
+      DB_HOST: mysql_db
+      DB_USER: user
+      DB_PASSWORD: password
+      DB_NAME: data_collection
+      ANALYTICS_SERVICE_URL: http://analytics:6000
+    ports:
+      - "3000:3000"
+    depends_on:
+      auth_service:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+
+  show_results:
+    build: ./show-results
+    container_name: show-results
+    restart: always
+    environment:
+      AUTH_SERVICE_URL: http://auth_service:5000
+      MONGO_URI: mongodb://mongo_db:27017/analytics
+    ports:
+      - "4000:4000"
+    depends_on:
+      auth_service:
+        condition: service_started
+      mongodb:
+        condition: service_started
+
+
+  analytics_service:
+    build: ./analytics-service
+    container_name: analytics
+    restart: always
+    environment:
+      MYSQL_HOST: mysql_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: data_collection
+      MONGO_URI: mongodb://mongo_db:27017/analytics
+    ports:
+      - "6000:6000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
 
 volumes:
   mysql_data:

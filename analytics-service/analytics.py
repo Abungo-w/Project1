@@ -1,47 +1,95 @@
+from flask import Flask, jsonify
 import pymysql
-from pymongo import MongoClient
+import pymongo
+import os
 import time
 
-def connect_with_retry(max_retries=5, delay=2):
-    """Connect to MySQL with retry logic"""
-    for attempt in range(max_retries):
+app = Flask(__name__)
+
+
+MYSQL_HOST = os.getenv("MYSQL_HOST", "mysql_db")
+MYSQL_USER = os.getenv("MYSQL_USER", "user")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "data_collection")
+
+
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo_db:27017/analytics")
+mongo_client = pymongo.MongoClient(MONGO_URI)
+mongo_db = mongo_client["analytics"]
+
+
+
+def get_mysql_connection(retries=5, delay=5):
+    for i in range(retries):
         try:
+            print(f"Connecting to MySQL (Attempt {i+1}/{retries})...")
             conn = pymysql.connect(
-                host='mysql-db',
-                user='user',
-                password='password',
-                database='projectdb'
+                host=MYSQL_HOST,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=MYSQL_DATABASE,
+                connect_timeout=10,
             )
-            print("Connected to MySQL successfully")
+            print("Connected to MySQL successfully!")
             return conn
         except pymysql.err.OperationalError as e:
-            if attempt < max_retries - 1:
-                print(f"Connection attempt {attempt + 1} failed. Retrying in {delay}s...")
+            print(f"MySQL connection failed: {e}")
+            if i < retries - 1:
+                print(f"Retrying in {delay} seconds...")
                 time.sleep(delay)
             else:
-                raise e
+                print("Failed to connect to MySQL after multiple attempts.")
+                raise
 
-# MySQL connection with retry
-conn = connect_with_retry()
-cursor = conn.cursor()
 
-# MongoDB connection
-mongo_client = MongoClient('mongodb://mongo-db:27017/')
-mongo_db = mongo_client['analyticsdb']
-mongo_col = mongo_db['results']
 
-# Fetch data from MySQL
-cursor.execute("SELECT value FROM data_table")
-values = [row[0] for row in cursor.fetchall()]
+def update_analytics():
+    mysql_conn = get_mysql_connection()
+    cursor = mysql_conn.cursor()
 
-if values:
-    stats = {
-        "max": max(values),
-        "min": min(values),
-        "avg": sum(values)/len(values)
-    }
-    mongo_col.replace_one({}, stats, upsert=True)
-    print("Analytics updated:", stats)
-else:
-    print("No data to analyze.")
+    cursor.execute("SELECT MAX(user_input), MIN(user_input), AVG(user_input) FROM entries")
+    result = cursor.fetchone()
 
+    if result and all(r is not None for r in result):  
+        max_val, min_val, avg_val = result
+        stats_collection = mongo_db.get_collection('stats')
+
+        
+        avg_val = float(avg_val)
+
+        stats_collection.insert_one({
+            "max": max_val,
+            "min": min_val,
+            "avg": avg_val
+        })
+
+        print(f"Updated MongoDB: Max={max_val}, Min={min_val}, Avg={avg_val}")
+    else:
+        print("No valid data found in MySQL.")
+
+    cursor.close()
+    mysql_conn.close()
+
+
+
+@app.route("/update-analytics", methods=["POST"])
+def trigger_update():
+    update_analytics()
+    return jsonify({"message": "Analytics updated successfully"}), 200
+
+
+
+@app.route("/analytics", methods=["GET"])
+def get_analytics():
+    stats = mongo_db.stats.find_one({}, {"_id": 0})  
+    if stats:
+        return jsonify(stats)
+    return jsonify({"error": "No analytics found"}), 404
+
+
+
+if __name__ == "__main__":
+    update_analytics() 
+    app.run(
+        host="0.0.0.0", port=6000, debug=True
+    )  

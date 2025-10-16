@@ -1,24 +1,29 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
+const cors = require('cors');  // <-- import cors
 
 const app = express();
-app.use(bodyParser.json());
+
+// Enable CORS
 app.use(cors());
 
-// Dummy users
+// Enable JSON body parsing
+app.use(express.json());
+
 const users = {
-    "user1": "password1",
-    "user2": "password2"
+    "admin": "password123",
+    "user": "mypassword"
 };
 
 app.post('/login', (req, res) => {
     const { username, password } = req.body;
-    if (users[username] && users[username] === password) {
-        res.json({ success: true });
-    } else {
-        res.status(401).json({ success: false, message: "Invalid credentials" });
+
+    if (users[username] === password) {
+        return res.status(200).json({ message: "Login successful" });
     }
+    return res.status(401).json({ message: "Invalid credentials" });
 });
 
-app.listen(4000, () => console.log("Auth service running on port 4000"));
+app.listen(5000, '0.0.0.0', () => {
+    console.log('Server running on http://0.0.0.0:5000');
+});
+
